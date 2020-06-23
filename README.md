@@ -6,3 +6,5 @@ Following are some of the data science projects/assignments that I did using R p
 2. Regression Analysis - Supervised Machine Learning for Airfares Prediction 
 3. Classification Analysis - Spam Classifier using LDA (Linear Discriminant Analysis)
 
+Note : Each of these folders contain a .rmd (R Markdown document) which consists of the code written in R and .md (a readme file) which consists of the output - results, interpretation and explanation. 
+
