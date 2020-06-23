@@ -1,0 +1,200 @@
+---
+title: "Classification_Analysis_Spam"
+output: rmarkdown::github_document
+---
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "README_figs/README-"
+)
+```
+
+```{r Load_packages_and_Data, include=TRUE}
+#Pacman tool used for Package-management
+if(!require("pacman")) install.packages("pacman")
+pacman::p_load(fpp2,lattice, gains, e1071, pROC, gains, MASS, caret, tidyverse, dplyr) 
+search()
+
+spamBaseFile<-file("https://archive.ics.uci.edu/ml/machine-learning-databases/spambase/spambase.data",open = "r", encoding = "UTF-8")
+data.df<-read.table(spamBaseFile,sep = ",")
+colnames(data.df) <- c ('word_freq_make', 'word_freq_address', 'word_freq_all', 'word_freq_3d', 'word_freq_our',
+                        'word_freq_over', 'word_freq_remove', 'word_freq_internet', 'word_freq_order', 
+                        'word_freq_mail', 'word_freq_receive', 'word_freq_will', 'word_freq_people', 
+                        'word_freq_report', 'word_freq_addresses', 'word_freq_free', 'word_freq_business',
+                        'word_freq_email', 'word_freq_you', 'word_freq_credit', 'word_freq_your', 'word_freq_font',
+                        'word_freq_000', 'word_freq_money', 'word_freq_hp', 'word_freq_hpl', 'word_freq_george', 
+                        'word_freq_650', 'word_freq_lab', 'word_freq_labs', 'word_freq_telnet', 'word_freq_857', 
+                        'word_freq_data', 'word_freq_415', 'word_freq_85', 'word_freq_technology','word_freq_1999',
+                        'word_freq_parts', 'word_freq_pm', 'word_freq_direct', 'word_freq_cs', 'word_freq_meeting',
+                        'word_freq_original', 'word_freq_project', 'word_freq_re', 'word_freq_edu',
+                        'word_freq_table', 'word_freq_conference', 'char_freq_;', 'char_freq_(', 'char_freq_[', 
+                        'char_freq_!', 'char_freq_$', 'char_freq_#', 'capital_run_length_average', 
+                        'capital_run_length_longest', 'capital_run_length_total', 'spam')
+
+```
+
+# Question 1
+## Examine how each predictor differs between the spam and non-spam e-mails by comparing the spam-class average and non-spam-class average. Identify 10 predictors for which the difference between the spam-class average and nonspam class average is highest.
+```{r Question 1}
+# Converting the Spam variable to a categorical variable
+data.df$spam <- as.factor(data.df$spam)
+
+Aggregate <- aggregate(data.df[, 1:57],list(data.df$spam), FUN = mean)
+Aggregate <- Aggregate[,-1]
+
+#Examining all the predictors of Spam emails
+spam.df <- data.df[data.df$spam == 1,]
+#Examining all the predictors of Non-Spam emails
+nonspam.df <- data.df[data.df$spam == 0,]
+
+#Selecting  10 predictors for which the difference between the spam-class average and nonspam-class average is highest
+Difference <- abs(Aggregate[2,] - Aggregate[1,])
+Difference1 <- Difference[,-1]
+Sorted<-head(t(sort(Difference1, decreasing = TRUE)),10)
+Sorted
+
+```
+
+Answer :
+The predictors which have the highest difference between the spam and non-spam averages i order of decreasing differences are:  capital_run_length_total, capital_run_length_longest, capital_run_length_average, word_freq_george, word_freq_you, word_freq_your, word_freq_hp, word_freq_free, word_freq_hpl, char_freq_!, word_freq_our. 
+
+# Question 2
+## Perform a linear discriminant analysis using the training dataset. Include only 10 predictors identified in the question above in the model.
+```{r Question 2}
+finalpredictors.df <- data.df[,c('capital_run_length_total','capital_run_length_longest','capital_run_length_average',
+                       'word_freq_george','word_freq_you','word_freq_your','word_freq_hp','word_freq_free',
+                       'word_freq_hpl',"char_freq_!",'spam')]
+levels(finalpredictors.df$spam) <- c("non-spam","spam")
+
+#Splitting the data into training set (80%) and validation set (20%)
+set.seed(42)
+training.index <- createDataPartition(finalpredictors.df$spam, p = 0.8, list = FALSE)
+finalpredictors.train <- finalpredictors.df[training.index, ]
+finalpredictors.valid <- finalpredictors.df[-training.index, ]
+
+
+# Normalizing the data
+# Estimate preprocessing parameters
+normval <- preProcess(finalpredictors.train, method = c("center", "scale"))
+# Transform the data using the estimated parameters
+normtrain.df <- predict(normval, finalpredictors.train)
+normvalid.df <- predict(normval, finalpredictors.valid)
+
+#Linear Discriminant Analysis
+LDA <- lda(spam ~ ., data = normtrain.df)
+LDA
+```
+
+# Question 3
+## What are the prior probabilities?
+```{r Question 3}
+LDA$prior
+```
+Answer 3: 
+Prior probabilities of groups: non-spam: 0.6059207 and spam: 0.3940793.
+In other words, 60.5% of the training observations are non-spam and 39.4% represent spam. 
+
+
+# Question 4
+## What are the coefficients of linear discriminants? Explain.
+```{r Question 4}
+coefficients(LDA)
+```
+Coefficients of linear discriminants helps us to classify the data into spam and non-spam. 
+LDA computes “discriminant scores” for each observation to classify what response variable class it is in (i.e. spam or non-spam). The coefficients of linear discriminants output provides the linear combination of spam and non-spam that are used to form the LDA decision rule. In other words, these are the multipliers of the elements in the LDA classifier equation.
+
+# Question 5
+## Generate linear discriminants using your analysis. How are they used in classifying spams and non-spams?
+```{r Question 5}
+pred.sample <- predict(LDA, normtrain.df[1:5,])
+pred.sample$x
+pred.sample$posterior
+```
+LDA classification is made based on the posterior probability, with observations predicted to be in the class for which they have the highest probability.
+The linear discriminant function is:
+y = 0.3725*(capital_run_length_total)+0.1297*(capital_run_length_longest)+0.0527*(Capital_run_length_average)-0.2104*(word_freq_george)+0.2466*(word_freq_you)+0.5715*(word_freq_your)-0.2354*(word_freq_hp)+0.3875*(word_freq_free)-0.1506*(word_freq_hpl)+0.3268*(char_freq_!)
+Using this linear discriminant function, a linear discriminant is generated for the observation in question based on the factors for that observation. Using this function (above), one can set the cut-off limit to dictate when an observation falls within a class (spam vs non-spam in this case)
+
+
+# Question 6
+## How many linear discriminants are in the model? Why?
+
+THere are 1 linear discriminant in the model. Because LDA is a dimension reduction model, and since there are 2 possible outcomes (spam/not spam) the model reduces it to a single dimension
+Number of linear discriminants = n - 1; n = number of classes of target variable.
+
+
+# Question 7
+## Generate LDA plot using the training and validation data. What information is presented in these plots? How are they different?
+```{r Question 7}
+
+train_lda = lda(spam ~ ., data = normtrain.df)
+plot(train_lda)
+
+test_lda = lda(spam ~ ., data = normvalid.df)
+plot(test_lda)
+
+```
+Answer 7:
+In the train LDA, the overlapping between spam and non spam is less thus classification of classes is better as compared to that in the test LDA. Also if the LDA score is greater than 0 then records are classified as spam. Thus we can see that most of the records are classified as spam.
+
+
+# Question 8
+## Generate the relevant confusion matrix. What are the sensitivity and specificity?
+```{r Question 8}
+# Predict propensities
+lda.pred <- predict(LDA, normvalid.df[, -11], type = "response")
+
+confusionMatrix(table(lda.pred$class, normvalid.df$spam))
+```
+Answer 8:
+      Sensitivity : 0.901          
+      Specificity : 0.674.
+      
+
+# Question 9
+## Generate lift and decile charts for the validation dataset and evaluate the effectiveness of the model in identifying spams.
+```{r Question 9}
+
+### generating a cumulative lift chart
+gain <- gains(as.numeric(normvalid.df$spam), lda.pred$x[,1], groups = 10)
+str(lda.pred$posterior)
+options(scipen=999)
+
+### Computing gains relative to price
+spam<- as.numeric(normvalid.df$spam)
+plot(c(0,gain$cume.pct.of.total*sum(spam))~c(0,gain$cume.obs),
+     xlab="# cases", ylab="Cumulative", main="Lift Chart",
+     col = "red", type="l")
+### inserting a baseline to the lift chart
+lines(c(0,sum(spam))~c(0, dim(finalpredictors.valid)[1]), lty = 5)
+
+### Decile-wise chart lift chart
+heights <- gain$mean.resp/mean(spam)
+midpoints <- barplot(heights, names.arg = gain$depth,  ylim = c(0,1.5), col = "pink",  
+                     xlab = "Percentile", ylab = "Mean Response",
+                     main = "Decile-wise lift chart")
+
+```
+Answer 9:
+As Lift is a measure of the effectiveness of a predictive model.
+In the above lift chart the further away the curve from the diagonal base line the better this model is doing in seperating records with high value outcomes from those with low value outcomes.
+Thus it can be concluded that the model predictive performance in terms of lift is better than the base model, since its lift curve is higher than the base model.
+We can see that former decile is higher than the later thus the decile wise lift chart is rightly skewed.  
+Thus,this model is effective in detecting the spams.
+
+# Question 10
+## Does accuracy of model changes if you use a probability threshold of 0.2. Explain your answer
+```{r Question 10}
+
+probsTest <- predict(LDA, normvalid.df)
+
+pred<- factor( ifelse(probsTest$posterior[,2] >= 0.2, "spam", "non-spam") )
+
+tab<-table(pred, normvalid.df$spam)
+confusionMatrix(tab)
+
+```
+Answer 10: We can see that as we change the threshold to 0.2 from the default threshold of 0.5, the accuracy drops down to 0.744.
+Change in accuracy by changing the threshold depends on the dataset. 
+
+      
