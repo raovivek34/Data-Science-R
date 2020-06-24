@@ -1,0 +1,157 @@
+---
+title: "Hitters"
+output: rmarkdown::github_document
+---
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "README_figs/README-"
+)
+```
+
+```{r loadPackages, warning=FALSE, message=FALSE, results='hide' }
+if(!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, reshape, gplots, ggmap, 
+               mlbench, data.table,ISLR, MASS, rpart, rpart.plot, caret,
+               randomForest, gbm, tree,leaps)
+search()
+theme_set(theme_classic())
+
+```
+
+
+```{r Loading Data}
+#Loading Data
+
+raw_hitters.df <- Hitters
+head(raw_hitters.df)
+str(raw_hitters.df)
+```
+Q1. Remove the observations with unknown salary information. How many
+observations were removed in this process?
+
+```{r ommiting null values}
+hitters.df <- raw_hitters.df[!is.na(raw_hitters.df$Salary),]
+hitters.df
+removed_observations <- length(raw_hitters.df$Salary)-length(hitters.df$Salary)
+removed_observations
+
+```
+Cleaning the dataset which had a few records seeing missing values in the Salary column saw a total of 59 observations being removed.
+
+Q2.Generate log-transform the salaries. Can you justify this transformation?
+```{r log transform}
+ggplot(hitters.df, aes(Salary)) + geom_histogram() + ggtitle('Salary without Log tranform')
+lgsal =log(hitters.df$Salary)
+ggplot(hitters.df, aes(lgsal)) + geom_histogram() + ggtitle('Log tranformed salary')
+
+```
+The salary values before the log transformation are right skewed. By log transforming the salary, we are making the salary values somewhat normally distributed.
+
+Q3.Create a scatterplot with Hits on the y-axis and Years on the x-axis using all the
+observations. Color code the observations using the log Salary variable. What
+patterns do you notice on this chart, if any?
+```{r scatter plot}
+qplot(hitters.df$Years,hitters.df$Hits, data = hitters.df, main = "Scatterplot for no. of hits with respect to no. of years", colour = lgsal)
+```
+It is very much clear from the scatter plot that hits are more when the player has experience of around 4 years to 6 years. In the later years, players are not generating as much hits but still are making great salary due to their experience level. Players with 5 or more than 5 are tending to get better salaries as compared to least experienced ones.
+
+Q.4 Run a linear regression model of Log Salary on all the predictors using the entire
+dataset. Use regsubsets() function to perform best subset selection from the
+regression model. Identify the best model using BIC. Which predictor variables
+are included in this (best) model? 
+
+```{r}
+set.seed(42)
+hitters.lm <- regsubsets(log(hitters.df$Salary) ~ ., data = hitters.df,method = 'exhaustive')
+hitters.lm.summary<-summary(hitters.lm)
+hitters.lm.summary
+hitters.lm.summary$bic
+
+
+```
+The model with the lowest BIC value is said to give the best model. It can be seen from the output as the model with 3 predictor has the lowest BIC value of -159.2777.
+The best predictors for predicting the salaries of players are:
+Hits, Walks and Years.
+
+Q.5 Now create a training data set consisting of 80 percent of the observations, and a
+test data set consisting of the remaining observations. 
+ 
+
+```{r}
+set.seed(42)
+train.index <- sample(1:nrow(hitters.df), 0.8 *(nrow(hitters.df))) 
+train.df <- hitters.df[train.index, ]
+valid.df <- hitters.df[-train.index, ]
+```
+Q6.Generate a regression tree of log Salary using only Years and Hits variables from the training data set. Which players are likely to receive highest salaries
+according to this model? Write down the rule and elaborate on it.
+
+```{r}
+set.seed(42)
+regtree <- rpart(log(Salary) ~ Years + Hits, data = train.df, method ="anova")
+prp(regtree, type = 1, extra = 1, split.font = 2)  
+rpart.rules(regtree, cover = TRUE)
+
+```
+The player getting highest salary is one who has experience of equal or more than 5 years in the league and has 104 or more hits.
+the rule simply is:
+Salary = 6.7 when years>=5 and hits>=104.
+
+Q7. Now create a regression tree using all the variables in the training data set.Perform boosting on the training set with 1,000 trees for a range of values of the shrinkage parameter λ. Produce a plot with different shrinkage values on the xaxis and the corresponding training set MSE on the y-axis.
+
+```{r}
+set.seed(42)
+shrinkage=seq(0.001,0.2,length=100)
+terrors <-rep(NA,100)
+verrors <- rep(NA,100)
+for (i in 1:100) {
+  
+    boosting <- gbm(log(Salary) ~ ., data = train.df, distribution = "gaussian", 
+        n.trees = 1000, shrinkage = shrinkage[i])
+    train_pred <- predict(boosting, train.df, n.trees = 1000)
+    valid_pred <- predict(boosting, valid.df, n.trees = 1000)
+    terrors[i] = mean((log(train.df$Salary) - train_pred)^2)
+    verrors[i] = mean((log(valid.df$Salary) - valid_pred)^2)
+}
+ggplot(data.frame(x=shrinkage, y=terrors), aes(x=x, y=y)) + xlab("Shrinkage Parameter") + ylab("Training MSE") + geom_point()
+shrinkage[which.min(terrors)]
+```
+The shrinkage Parameter having minimum Mean Square error on testing data is 0.2
+
+Q8.Produce a plot with different shrinkage values on the x-axis and the
+corresponding test set MSE on the y-axis. 
+```{r}
+ggplot(data.frame(x=shrinkage, y=verrors), aes(x=x, y=y)) + xlab("Shrinkage Parameter") + ylab("Testing data MSE") + geom_point()
+shrinkage[which.min(verrors)]
+
+```
+
+The shrinkage Parameter having minimum Mean Square error on Testing data is 0.08542424
+
+Q9.Which variables appear to be the most important predictors in the boosted
+model? 
+
+```{r}
+set.seed(42)
+boosting <- gbm(log(Salary) ~ ., data = train.df, distribution = "gaussian", 
+    n.trees = 1000, shrinkage = shrinkage[which.min(terrors)])
+summary(boosting)
+```
+The important predictors in the boosted model with best shrinkage parameter having minimum MSE are the ones having highest relative influence .
+The top 3 important predictors are:
+CAtBat
+PutOuts
+walks
+
+Q 10. Now apply bagging to the training set. What is the test set MSE for this
+approach?
+
+```{r}
+set.seed(42)
+bagging <- randomForest(log(Salary)~., data=train.df, 
+                           mtry = 19, importance = TRUE,ntree=1000)
+bagging
+bagging.prediction <- predict(bagging, valid.df)
+mean((bagging.prediction-log(valid.df$Salary))^2)
+```
+The Test Mean Squared Error for bagging is 0.2487804
